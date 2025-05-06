@@ -1,0 +1,73 @@
+services:
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: namenode
+    environment:
+      - CLUSTER_NAME=testcluster
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+    ports:
+      - "9870:9870"
+      - "9000:9000"
+    volumes:
+      - namenode_storage:/hadoop/dfs/name
+      - ./data/mushrooms.csv:/hadoop/mushrooms.csv:ro
+    networks:
+      - hadoop_cluster_network
+    healthcheck:
+      test: ["CMD", "hdfs", "dfsadmin", "-safemode", "get"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    environment:
+      - CLUSTER_NAME=testcluster
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+    depends_on:
+      - namenode
+    volumes:
+      - datanode_storage:/hadoop/dfs/data
+    networks:
+      - hadoop_cluster_network
+
+  spark:
+    build:
+      context: ./spark_application
+      dockerfile: Dockerfile
+    container_name: spark
+    environment:
+      - INIT_DAEMON_STEP=setup_spark
+      - SPARK_MASTER=spark://spark:7078
+      - PYSPARK_PYTHON=/usr/bin/python3
+      - PYSPARK_DRIVER_PYTHON=/usr/bin/python3
+    ports:
+      - "18080:8080"
+      - "708:7077"
+    depends_on:
+      - namenode
+      - datanode
+    volumes:
+      - ./:/opt
+    networks:
+      - hadoop_cluster_network
+
+  spark_executor:
+    image: bde2020/spark-worker:3.1.1-hadoop3.2
+    container_name: spark_executor
+    environment:
+      - SPARK_MASTER=spark://spark:7077
+      - SPARK_WORKER_CORES=1
+      - SPARK_WORKER_MEMORY=1g
+    depends_on:
+      - spark
+    networks:
+      - hadoop_cluster_network
+
+networks:
+  hadoop_cluster_network:
+    driver: bridge
+
+volumes:
+  namenode_storage:
+  datanode_storage:
